@@ -11,6 +11,15 @@ import {useNavigation} from '@react-navigation/native';
 
 const MainScreen = () => {
   const navigation = useNavigation();
+  
+  // Fallback для иконок если они не загрузились
+  const IconComponent = ({name, size, color, ...props}) => {
+    try {
+      return <Icon name={name} size={size} color={color} {...props} />;
+    } catch (error) {
+      return <Text style={{fontSize: size, color}}>●</Text>;
+    }
+  };
 
   return (
     <ScrollView style={styles.container}>
@@ -21,7 +30,7 @@ const MainScreen = () => {
           style={styles.button}
           onPress={() => navigation.navigate('VideoProtocol')}>
           <View style={styles.buttonContent}>
-            <Icon name="videocam" size={40} color="#4A90E2" />
+            <IconComponent name="videocam" size={40} color="#4A90E2" />
             <Text style={styles.buttonText}>Протокол с видео</Text>
           </View>
         </TouchableOpacity>
@@ -30,7 +39,7 @@ const MainScreen = () => {
           style={styles.button}
           onPress={() => navigation.navigate('PhotoProtocol')}>
           <View style={styles.buttonContent}>
-            <Icon name="camera-alt" size={40} color="#4A90E2" />
+            <IconComponent name="camera-alt" size={40} color="#4A90E2" />
             <Text style={styles.buttonText}>Протокол с фото</Text>
           </View>
         </TouchableOpacity>
@@ -39,7 +48,7 @@ const MainScreen = () => {
           style={styles.button}
           onPress={() => navigation.navigate('ScreenshotProtocol')}>
           <View style={styles.buttonContent}>
-            <Icon name="screenshot" size={40} color="#4A90E2" />
+            <IconComponent name="screenshot" size={40} color="#4A90E2" />
             <Text style={styles.buttonText}>Протокол со скриншотами</Text>
           </View>
         </TouchableOpacity>
@@ -48,7 +57,7 @@ const MainScreen = () => {
           style={[styles.button, styles.listButton]}
           onPress={() => navigation.navigate('ProtocolsList')}>
           <View style={styles.buttonContent}>
-            <Icon name="list" size={40} color="#4A90E2" />
+            <IconComponent name="list" size={40} color="#4A90E2" />
             <Text style={styles.buttonText}>Список протоколов</Text>
           </View>
         </TouchableOpacity>

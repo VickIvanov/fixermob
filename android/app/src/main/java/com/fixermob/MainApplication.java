@@ -24,6 +24,7 @@ public class MainApplication extends Application implements ReactApplication {
           @SuppressWarnings("UnnecessaryLocalVariable")
           List<ReactPackage> packages = new PackageList(this).getPackages();
           packages.add(new OverlayPackage());
+          packages.add(new PdfViewerPackage());
           return packages;
         }
 

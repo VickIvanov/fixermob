@@ -6,15 +6,18 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import FileViewer from 'react-native-file-viewer';
 import {getFileUri, fileExists, downloadPdfIfNeeded} from '../services/StorageService';
+import PdfViewerService from '../services/PdfViewerService';
+import RNFS from 'react-native-fs';
 
 const ProtocolDetailScreen = ({route}) => {
   const {protocol} = route.params;
   const [isLoading, setIsLoading] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [pdfExists, setPdfExists] = useState(false);
 
   useEffect(() => {
@@ -30,25 +33,6 @@ const ProtocolDetailScreen = ({route}) => {
     }
   };
 
-  const downloadPdf = async () => {
-    if (!protocol.protocol_id) {
-      Alert.alert('Ошибка', 'ID протокола не найден');
-      return;
-    }
-
-    try {
-      setIsDownloading(true);
-      const fileName = protocol.pdfPath || `protocol_${protocol.protocol_id}.pdf`;
-      await downloadPdfIfNeeded(protocol.protocol_id, fileName);
-      await checkPdfExists();
-      Alert.alert('Успех', 'PDF успешно загружен');
-    } catch (error) {
-      console.error('Error downloading PDF:', error);
-      Alert.alert('Ошибка', 'Не удалось загрузить PDF файл');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -85,30 +69,63 @@ const ProtocolDetailScreen = ({route}) => {
         const exists = await fileExists(protocol.pdfPath);
         
         if (!exists && protocol.protocol_id) {
-          // Пытаемся скачать если файла нет
-          await downloadPdf();
-          filePath = getFileUri(protocol.pdfPath);
+          // Автоматически скачиваем если файла нет
+          const fileName = protocol.pdfPath || `protocol_${protocol.protocol_id}.pdf`;
+          await downloadPdfIfNeeded(protocol.protocol_id, fileName);
+          filePath = getFileUri(fileName);
         } else if (!exists) {
           Alert.alert('Ошибка', 'PDF файл не найден');
           return;
         }
       } else if (protocol.protocol_id) {
-        // Скачиваем если нет локального пути
-        await downloadPdf();
+        // Автоматически скачиваем если нет локального пути
         const fileName = `protocol_${protocol.protocol_id}.pdf`;
+        await downloadPdfIfNeeded(protocol.protocol_id, fileName);
         filePath = getFileUri(fileName);
       } else {
         Alert.alert('Ошибка', 'PDF файл не найден');
         return;
       }
 
+      // Проверяем существование файла
+      const exists = await RNFS.exists(filePath);
+      if (!exists) {
+        Alert.alert('Ошибка', 'PDF файл не найден по пути: ' + filePath);
+        return;
+      }
+
+      console.log('[ProtocolDetailScreen] Opening PDF:', filePath);
+      
+      // Пробуем использовать нативный модуль для Android
+      if (Platform.OS === 'android') {
+        try {
+          await PdfViewerService.openPdf(filePath);
+          return; // Успешно открыто
+        } catch (nativeError) {
+          console.warn('[ProtocolDetailScreen] Native PDF viewer failed, trying FileViewer:', nativeError);
+          // Fallback на FileViewer
+        }
+      }
+      
+      // Используем FileViewer как fallback
       await FileViewer.open(filePath, {
         showOpenWithDialog: true,
         showAppsSuggestions: true,
+        displayName: `Протокол ${protocol.protocolNumber}`,
       });
     } catch (error) {
-      console.error('Error opening PDF:', error);
-      Alert.alert('Ошибка', 'Не удалось открыть PDF файл');
+      console.error('[ProtocolDetailScreen] Error opening PDF:', error);
+      console.error('[ProtocolDetailScreen] Error message:', error.message);
+      
+      // Показываем понятное сообщение об ошибке
+      let errorMessage = 'Не удалось открыть PDF файл';
+      if (error.message && error.message.includes('No app associated')) {
+        errorMessage = 'На устройстве не найдено приложение для просмотра PDF. Установите приложение для просмотра PDF файлов (например, Adobe Reader или Google PDF Viewer).';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Ошибка', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -148,29 +165,10 @@ const ProtocolDetailScreen = ({route}) => {
       </View>
 
       <View style={styles.actions}>
-        {!pdfExists && protocol.protocol_id && (
-          <TouchableOpacity
-            style={[styles.button, styles.downloadButton]}
-            onPress={downloadPdf}
-            disabled={isDownloading}>
-            {isDownloading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Icon name="cloud-download" size={24} color="#FFFFFF" />
-                <Text style={styles.buttonText}>Загрузить PDF</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-
         <TouchableOpacity
-          style={[
-            styles.button,
-            (!pdfExists && !protocol.protocol_id) && styles.buttonDisabled,
-          ]}
+          style={styles.button}
           onPress={openPdf}
-          disabled={(!pdfExists && !protocol.protocol_id) || isLoading}>
+          disabled={isLoading}>
           {isLoading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
@@ -180,12 +178,6 @@ const ProtocolDetailScreen = ({route}) => {
             </>
           )}
         </TouchableOpacity>
-
-        {!pdfExists && !protocol.protocol_id && (
-          <Text style={styles.warningText}>
-            PDF файл еще не загружен или не найден
-          </Text>
-        )}
       </View>
     </View>
   );

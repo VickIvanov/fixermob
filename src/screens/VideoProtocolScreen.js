@@ -31,13 +31,29 @@ const VideoProtocolScreen = () => {
 
   const requestCameraPermission = async () => {
     try {
-      const permission = Platform.select({
+      const cameraPermission = Platform.select({
         android: PERMISSIONS.ANDROID.CAMERA,
         ios: PERMISSIONS.IOS.CAMERA,
       });
 
-      const result = await request(permission);
-      setHasPermission(result === RESULTS.GRANTED);
+      const micPermission = Platform.select({
+        android: PERMISSIONS.ANDROID.RECORD_AUDIO,
+        ios: PERMISSIONS.IOS.MICROPHONE,
+      });
+
+      const cameraResult = await request(cameraPermission);
+      const micResult = await request(micPermission);
+      
+      setHasPermission(
+        cameraResult === RESULTS.GRANTED && micResult === RESULTS.GRANTED
+      );
+      
+      if (micResult !== RESULTS.GRANTED) {
+        Alert.alert(
+          'Разрешение требуется',
+          'Для записи видео со звуком необходимо разрешение на микрофон'
+        );
+      }
     } catch (error) {
       console.error('Error requesting camera permission:', error);
       Alert.alert('Ошибка', 'Не удалось запросить разрешение на камеру');
@@ -52,16 +68,47 @@ const VideoProtocolScreen = () => {
 
     try {
       setIsRecording(true);
+      // Проверяем разрешение на микрофон перед записью
+      const micPermission = Platform.select({
+        android: PERMISSIONS.ANDROID.RECORD_AUDIO,
+        ios: PERMISSIONS.IOS.MICROPHONE,
+      });
+      
+      const micResult = await request(micPermission);
+      const hasMicPermission = micResult === RESULTS.GRANTED;
+      
       const file = await camera.current.startRecording({
         flash: 'off',
+        audio: hasMicPermission, // Включаем звук только если есть разрешение
         onRecordingFinished: (video) => {
           setVideoPath(video.path);
           setIsRecording(false);
         },
         onRecordingError: (error) => {
           console.error('Recording error:', error);
-          Alert.alert('Ошибка', 'Не удалось записать видео');
-          setIsRecording(false);
+          if (error.code === 'permission/microphone-permission-denied') {
+            Alert.alert(
+              'Ошибка',
+              'Не удалось записать видео: нет разрешения на микрофон. Видео будет записано без звука.'
+            );
+            // Пробуем записать без звука
+            camera.current.startRecording({
+              flash: 'off',
+              audio: false,
+              onRecordingFinished: (video) => {
+                setVideoPath(video.path);
+                setIsRecording(false);
+              },
+              onRecordingError: (error) => {
+                console.error('Recording error (no audio):', error);
+                Alert.alert('Ошибка', 'Не удалось записать видео');
+                setIsRecording(false);
+              },
+            });
+          } else {
+            Alert.alert('Ошибка', 'Не удалось записать видео');
+            setIsRecording(false);
+          }
         },
       });
     } catch (error) {
@@ -86,9 +133,13 @@ const VideoProtocolScreen = () => {
     try {
       setIsUploading(true);
 
-      // Сохраняем видео локально
-      const fileName = `video_${Date.now()}.mp4`;
-      const savedPath = await saveFile(videoPath, fileName);
+      // Используем путь напрямую, если он уже правильный
+      // Сохраняем видео локально только если нужно
+      let savedPath = videoPath;
+      if (!videoPath.startsWith('/') && !videoPath.startsWith('file://')) {
+        const fileName = `video_${Date.now()}.mp4`;
+        savedPath = await saveFile(videoPath, fileName);
+      }
 
       // Отправляем на API
       const response = await uploadVideoProtocol(savedPath);
@@ -123,8 +174,16 @@ const VideoProtocolScreen = () => {
         ]);
       }
     } catch (error) {
-      console.error('Error uploading video:', error);
-      Alert.alert('Ошибка', 'Не удалось отправить протокол');
+      console.error('[VideoProtocolScreen] Error uploading video:', error);
+      console.error('[VideoProtocolScreen] Error message:', error.message);
+      console.error('[VideoProtocolScreen] Error stack:', error.stack);
+      const errorMessage = error.message || 'Не удалось отправить протокол';
+      Alert.alert(
+        'Ошибка',
+        errorMessage.includes('Network') 
+          ? 'Ошибка сети. Проверьте подключение к интернету и что API сервер запущен на http://localhost:5001'
+          : errorMessage
+      );
     } finally {
       setIsUploading(false);
     }

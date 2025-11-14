@@ -105,7 +105,13 @@ const PhotoProtocolScreen = () => {
       }
     } catch (error) {
       console.error('Error uploading photos:', error);
-      Alert.alert('Ошибка', 'Не удалось отправить протокол');
+      const errorMessage = error.message || 'Не удалось отправить протокол';
+      Alert.alert(
+        'Ошибка',
+        errorMessage.includes('Network') 
+          ? 'Ошибка сети. Проверьте подключение к интернету и что API сервер запущен на http://192.168.1.57:5001'
+          : errorMessage
+      );
     } finally {
       setIsUploading(false);
     }
