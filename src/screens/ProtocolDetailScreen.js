@@ -9,12 +9,12 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import FileViewer from 'react-native-file-viewer';
-import {getFileUri, fileExists} from '../services/StorageService';
-import RNFS from 'react-native-fs';
+import {getFileUri, fileExists, downloadPdfIfNeeded} from '../services/StorageService';
 
 const ProtocolDetailScreen = ({route}) => {
   const {protocol} = route.params;
   const [isLoading, setIsLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [pdfExists, setPdfExists] = useState(false);
 
   useEffect(() => {
@@ -22,8 +22,32 @@ const ProtocolDetailScreen = ({route}) => {
   }, []);
 
   const checkPdfExists = async () => {
-    const exists = await fileExists(protocol.pdfPath);
-    setPdfExists(exists);
+    if (protocol.pdfPath) {
+      const exists = await fileExists(protocol.pdfPath);
+      setPdfExists(exists);
+    } else {
+      setPdfExists(false);
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!protocol.protocol_id) {
+      Alert.alert('Ошибка', 'ID протокола не найден');
+      return;
+    }
+
+    try {
+      setIsDownloading(true);
+      const fileName = protocol.pdfPath || `protocol_${protocol.protocol_id}.pdf`;
+      await downloadPdfIfNeeded(protocol.protocol_id, fileName);
+      await checkPdfExists();
+      Alert.alert('Успех', 'PDF успешно загружен');
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      Alert.alert('Ошибка', 'Не удалось загрузить PDF файл');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -53,10 +77,27 @@ const ProtocolDetailScreen = ({route}) => {
   const openPdf = async () => {
     try {
       setIsLoading(true);
-      const filePath = getFileUri(protocol.pdfPath);
-      const exists = await fileExists(protocol.pdfPath);
-
-      if (!exists) {
+      
+      // Проверяем наличие файла
+      let filePath;
+      if (protocol.pdfPath) {
+        filePath = getFileUri(protocol.pdfPath);
+        const exists = await fileExists(protocol.pdfPath);
+        
+        if (!exists && protocol.protocol_id) {
+          // Пытаемся скачать если файла нет
+          await downloadPdf();
+          filePath = getFileUri(protocol.pdfPath);
+        } else if (!exists) {
+          Alert.alert('Ошибка', 'PDF файл не найден');
+          return;
+        }
+      } else if (protocol.protocol_id) {
+        // Скачиваем если нет локального пути
+        await downloadPdf();
+        const fileName = `protocol_${protocol.protocol_id}.pdf`;
+        filePath = getFileUri(fileName);
+      } else {
         Alert.alert('Ошибка', 'PDF файл не найден');
         return;
       }
@@ -107,13 +148,29 @@ const ProtocolDetailScreen = ({route}) => {
       </View>
 
       <View style={styles.actions}>
+        {!pdfExists && protocol.protocol_id && (
+          <TouchableOpacity
+            style={[styles.button, styles.downloadButton]}
+            onPress={downloadPdf}
+            disabled={isDownloading}>
+            {isDownloading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Icon name="cloud-download" size={24} color="#FFFFFF" />
+                <Text style={styles.buttonText}>Загрузить PDF</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={[
             styles.button,
-            (!pdfExists || isLoading) && styles.buttonDisabled,
+            (!pdfExists && !protocol.protocol_id) && styles.buttonDisabled,
           ]}
           onPress={openPdf}
-          disabled={!pdfExists || isLoading}>
+          disabled={(!pdfExists && !protocol.protocol_id) || isLoading}>
           {isLoading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
@@ -124,7 +181,7 @@ const ProtocolDetailScreen = ({route}) => {
           )}
         </TouchableOpacity>
 
-        {!pdfExists && (
+        {!pdfExists && !protocol.protocol_id && (
           <Text style={styles.warningText}>
             PDF файл еще не загружен или не найден
           </Text>
@@ -184,6 +241,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 15,
     borderRadius: 8,
+    marginBottom: 10,
+  },
+  downloadButton: {
+    backgroundColor: '#27AE60',
   },
   buttonDisabled: {
     backgroundColor: '#CCC',
@@ -203,4 +264,3 @@ const styles = StyleSheet.create({
 });
 
 export default ProtocolDetailScreen;
-

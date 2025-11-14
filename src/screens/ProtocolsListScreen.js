@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   FlatList,
   RefreshControl,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
@@ -14,16 +16,21 @@ import {getProtocols} from '../services/ProtocolStorage';
 const ProtocolsListScreen = () => {
   const [protocols, setProtocols] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigation = useNavigation();
 
   const loadProtocols = async () => {
     try {
+      setLoading(true);
       const data = await getProtocols();
       // Сортируем по дате (новые первыми)
       const sorted = data.sort((a, b) => new Date(b.date) - new Date(a.date));
       setProtocols(sorted);
     } catch (error) {
       console.error('Error loading protocols:', error);
+      Alert.alert('Ошибка', 'Не удалось загрузить протоколы');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -40,14 +47,18 @@ const ProtocolsListScreen = () => {
   };
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (error) {
+      return dateString;
+    }
   };
 
   const getTypeIcon = (type) => {
@@ -56,6 +67,8 @@ const ProtocolsListScreen = () => {
         return 'videocam';
       case 'photo':
         return 'camera-alt';
+      case 'screenshots':
+        return 'screenshot';
       case 'screenshot':
         return 'screenshot';
       default:
@@ -78,6 +91,17 @@ const ProtocolsListScreen = () => {
     </TouchableOpacity>
   );
 
+  if (loading && protocols.length === 0) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#4A90E2" />
+          <Text style={styles.emptyText}>Загрузка протоколов...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {protocols.length === 0 ? (
@@ -92,7 +116,7 @@ const ProtocolsListScreen = () => {
         <FlatList
           data={protocols}
           renderItem={renderProtocol}
-          keyExtractor={(item) => item.protocolNumber}
+          keyExtractor={(item) => item.protocol_id || item.protocolNumber}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
@@ -164,4 +188,3 @@ const styles = StyleSheet.create({
 });
 
 export default ProtocolsListScreen;
-

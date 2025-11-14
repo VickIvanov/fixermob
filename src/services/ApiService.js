@@ -1,61 +1,51 @@
-// import axios from 'axios';
+import {Platform} from 'react-native';
 import {getDeviceId} from './DeviceService';
 
-// const API_BASE_URL = 'https://api.example.com'; // Моковый URL, замените на реальный
+// Для Android эмулятора используем 10.0.2.2 вместо localhost
+// Для физического устройства используйте IP адрес вашего компьютера
+const API_BASE_URL = __DEV__
+  ? Platform.OS === 'android'
+    ? 'http://10.0.2.2:5001' // Android эмулятор
+    : 'http://localhost:5001' // iOS симулятор
+  : 'http://your-server-ip:5001'; // Продакшн
 
-// Простая функция для base64 кодирования (для моковых данных)
-const toBase64 = (str) => {
-  try {
-    // В React Native можно использовать встроенную функцию если доступна
-    if (typeof btoa !== 'undefined') {
-      return btoa(str);
-    }
-    // Или использовать простую заглушку
-    return 'TW9ja1BERg=='; // "Mock PDF" в base64
-  } catch (e) {
-    return 'TW9ja1BERg==';
-  }
-};
-
-// Моковая функция для генерации PDF
-const generateMockPdf = async (protocolData) => {
-  // В реальном приложении здесь будет запрос к API
-  // Пока возвращаем моковые данные
-  const mockContent = `Mock PDF Content - Protocol: ${protocolData.type}, Device: ${protocolData.deviceId}`;
-  const mockPdfBase64 = toBase64(mockContent);
-  
-  return {
-    pdfUrl: `data:application/pdf;base64,${mockPdfBase64}`,
-    protocolNumber: `PROT-${Date.now()}`,
-  };
-};
-
+/**
+ * Загрузка видео протокола
+ * @param {string} videoPath - Путь к видео файлу
+ * @returns {Promise<{success: boolean, protocol_id: string, pdf_url: string}>}
+ */
 export const uploadVideoProtocol = async (videoPath) => {
   try {
     const deviceId = await getDeviceId();
     
-    // В реальном приложении здесь будет загрузка файла
-    // Пока используем мок
     const formData = new FormData();
+    formData.append('device_id', deviceId);
     formData.append('video', {
       uri: videoPath,
       type: 'video/mp4',
       name: 'video.mp4',
     });
-    formData.append('deviceId', deviceId);
-    formData.append('type', 'video');
 
-    // Моковый ответ
-    const mockResponse = await generateMockPdf({
-      type: 'video',
-      deviceId,
-      timestamp: new Date().toISOString(),
+    const response = await fetch(`${API_BASE_URL}/api/protocols/video`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
 
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
     return {
       success: true,
-      protocolNumber: mockResponse.protocolNumber,
-      pdfUrl: mockResponse.pdfUrl,
+      protocol_id: data.protocol_id,
+      protocolNumber: data.protocol_id.substring(0, 8).toUpperCase(), // Первые 8 символов как номер
+      pdf_url: data.pdf_url,
       date: new Date().toISOString(),
     };
   } catch (error) {
@@ -64,11 +54,18 @@ export const uploadVideoProtocol = async (videoPath) => {
   }
 };
 
+/**
+ * Загрузка фото протокола
+ * @param {string[]} photoPaths - Массив путей к фото файлам
+ * @returns {Promise<{success: boolean, protocol_id: string, pdf_url: string}>}
+ */
 export const uploadPhotoProtocol = async (photoPaths) => {
   try {
     const deviceId = await getDeviceId();
     
     const formData = new FormData();
+    formData.append('device_id', deviceId);
+    
     photoPaths.forEach((path, index) => {
       formData.append('photos', {
         uri: path,
@@ -76,21 +73,29 @@ export const uploadPhotoProtocol = async (photoPaths) => {
         name: `photo_${index}.jpg`,
       });
     });
-    formData.append('deviceId', deviceId);
-    formData.append('type', 'photo');
 
-    const mockResponse = await generateMockPdf({
-      type: 'photo',
-      deviceId,
-      timestamp: new Date().toISOString(),
-      photoCount: photoPaths.length,
+    const response = await fetch(`${API_BASE_URL}/api/protocols/photos`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
 
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
     return {
       success: true,
-      protocolNumber: mockResponse.protocolNumber,
-      pdfUrl: mockResponse.pdfUrl,
+      protocol_id: data.protocol_id,
+      protocolNumber: data.protocol_id.substring(0, 8).toUpperCase(),
+      pdf_url: data.pdf_url,
       date: new Date().toISOString(),
+      photoCount: photoPaths.length,
     };
   } catch (error) {
     console.error('Error uploading photo protocol:', error);
@@ -98,11 +103,18 @@ export const uploadPhotoProtocol = async (photoPaths) => {
   }
 };
 
+/**
+ * Загрузка скриншотов протокола
+ * @param {string[]} screenshotPaths - Массив путей к скриншотам
+ * @returns {Promise<{success: boolean, protocol_id: string, pdf_url: string}>}
+ */
 export const uploadScreenshotProtocol = async (screenshotPaths) => {
   try {
     const deviceId = await getDeviceId();
     
     const formData = new FormData();
+    formData.append('device_id', deviceId);
+    
     screenshotPaths.forEach((path, index) => {
       formData.append('screenshots', {
         uri: path,
@@ -110,21 +122,29 @@ export const uploadScreenshotProtocol = async (screenshotPaths) => {
         name: `screenshot_${index}.png`,
       });
     });
-    formData.append('deviceId', deviceId);
-    formData.append('type', 'screenshot');
 
-    const mockResponse = await generateMockPdf({
-      type: 'screenshot',
-      deviceId,
-      timestamp: new Date().toISOString(),
-      screenshotCount: screenshotPaths.length,
+    const response = await fetch(`${API_BASE_URL}/api/protocols/screenshots`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
 
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
     return {
       success: true,
-      protocolNumber: mockResponse.protocolNumber,
-      pdfUrl: mockResponse.pdfUrl,
+      protocol_id: data.protocol_id,
+      protocolNumber: data.protocol_id.substring(0, 8).toUpperCase(),
+      pdf_url: data.pdf_url,
       date: new Date().toISOString(),
+      screenshotCount: screenshotPaths.length,
     };
   } catch (error) {
     console.error('Error uploading screenshot protocol:', error);
@@ -132,3 +152,91 @@ export const uploadScreenshotProtocol = async (screenshotPaths) => {
   }
 };
 
+/**
+ * Получение списка протоколов для устройства
+ * @returns {Promise<{success: boolean, protocols: Array}>}
+ */
+export const getProtocols = async () => {
+  try {
+    const deviceId = await getDeviceId();
+    
+    const response = await fetch(
+      `${API_BASE_URL}/api/protocols?device_id=${encodeURIComponent(deviceId)}`,
+      {
+        method: 'GET',
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    return {
+      success: true,
+      protocols: data.protocols || [],
+    };
+  } catch (error) {
+    console.error('Error getting protocols:', error);
+    throw error;
+  }
+};
+
+/**
+ * Скачивание PDF протокола
+ * @param {string} protocolId - ID протокола
+ * @returns {Promise<string>} - Путь к сохраненному PDF файлу
+ */
+export const downloadProtocolPDF = async (protocolId) => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/protocols/${protocolId}/pdf`,
+      {
+        method: 'GET',
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    // Получаем PDF как blob и конвертируем в base64
+    const blob = await response.blob();
+    const reader = new FileReader();
+    
+    return new Promise((resolve, reject) => {
+      reader.onloadend = () => {
+        const base64data = reader.result.split(',')[1];
+        resolve(base64data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error downloading PDF:', error);
+    throw error;
+  }
+};
+
+/**
+ * Проверка работоспособности API
+ * @returns {Promise<{status: string}>}
+ */
+export const checkApiHealth = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/health`, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error checking API health:', error);
+    throw error;
+  }
+};

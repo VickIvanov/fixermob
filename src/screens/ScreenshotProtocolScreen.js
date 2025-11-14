@@ -116,15 +116,21 @@ const ScreenshotProtocolScreen = () => {
 
       if (response.success) {
         // Сохраняем PDF
-        const pdfFileName = `protocol_${response.protocolNumber}.pdf`;
-        await savePdf(response.pdfUrl, pdfFileName);
+        const pdfFileName = `protocol_${response.protocol_id}.pdf`;
+        try {
+          await savePdf(response.pdf_url, pdfFileName, response.protocol_id);
+        } catch (pdfError) {
+          console.warn('Failed to save PDF immediately, will download later:', pdfError);
+        }
 
         // Сохраняем протокол
         await saveProtocol({
+          protocol_id: response.protocol_id,
           protocolNumber: response.protocolNumber,
           date: response.date,
           type: 'screenshot',
           pdfPath: pdfFileName,
+          pdf_url: response.pdf_url,
           screenshotCount: screenshots.length,
         });
 
