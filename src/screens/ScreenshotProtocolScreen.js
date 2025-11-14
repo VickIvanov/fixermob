@@ -1,4 +1,4 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -9,34 +9,83 @@ import {
   ScrollView,
   Image,
   StatusBar,
+  AppState,
 } from 'react-native';
 import {captureScreen} from 'react-native-view-shot';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {uploadScreenshotProtocol} from '../services/ApiService';
 import {saveFile, savePdf} from '../services/StorageService';
 import {saveProtocol} from '../services/ProtocolStorage';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import {
+  requestOverlayPermission,
+  checkOverlayPermission,
+  startOverlayService,
+  stopOverlayService,
+  addOverlayListener,
+} from '../services/OverlayService';
 
 const ScreenshotProtocolScreen = () => {
   const [screenshots, setScreenshots] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [isCapturing, setIsCapturing] = useState(false);
+  const [hasOverlayPermission, setHasOverlayPermission] = useState(false);
   const navigation = useNavigation();
-  const viewRef = useRef(null);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      checkPermissionAndStartService();
+      
+      // Слушаем события от overlay сервиса
+      const subscription = addOverlayListener((event) => {
+        if (event.action === 'takeScreenshot') {
+          takeScreenshot();
+        }
+      });
+
+      return () => {
+        stopOverlayService();
+        subscription?.remove();
+      };
+    }, []),
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkPermissionAndStartService();
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
+  const checkPermissionAndStartService = async () => {
+    const hasPermission = await checkOverlayPermission();
+    setHasOverlayPermission(hasPermission);
+    
+    if (hasPermission) {
+      await startOverlayService();
+    } else {
+      const granted = await requestOverlayPermission();
+      setHasOverlayPermission(granted);
+      if (granted) {
+        await startOverlayService();
+      }
+    }
+  };
 
   const takeScreenshot = async () => {
     try {
-      setIsCapturing(true);
       const uri = await captureScreen({
         format: 'png',
         quality: 0.9,
       });
-      setScreenshots([...screenshots, uri]);
+      setScreenshots(prev => [...prev, uri]);
     } catch (error) {
       console.error('Error taking screenshot:', error);
       Alert.alert('Ошибка', 'Не удалось сделать скриншот');
-    } finally {
-      setIsCapturing(false);
     }
   };
 
@@ -98,34 +147,42 @@ const ScreenshotProtocolScreen = () => {
   };
 
   return (
-    <View style={styles.container} ref={viewRef}>
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
-      {/* Плавающая кнопка для создания скриншота */}
-      <TouchableOpacity
-        style={styles.floatingButton}
-        onPress={takeScreenshot}
-        disabled={isCapturing}>
-        {isCapturing ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Icon name="camera-alt" size={30} color="#FFFFFF" />
-        )}
-      </TouchableOpacity>
 
       <ScrollView style={styles.scrollView}>
         <View style={styles.infoContainer}>
           <Icon name="info" size={24} color="#4A90E2" />
           <Text style={styles.infoText}>
-            Используйте телефон в обычном режиме. Нажимайте на плавающую кнопку для создания скриншотов.
+            {hasOverlayPermission
+              ? 'Плавающая кнопка активна! Она будет видна поверх всех приложений. Нажмите на неё для создания скриншотов в любом приложении.'
+              : 'Для работы кнопки скриншотов необходимо разрешить "Отображение поверх других приложений". Нажмите кнопку ниже для запроса разрешения.'}
           </Text>
         </View>
+
+        {!hasOverlayPermission && (
+          <View style={styles.permissionContainer}>
+            <TouchableOpacity
+              style={styles.permissionButton}
+              onPress={checkPermissionAndStartService}>
+              <Icon name="security" size={30} color="#FFFFFF" />
+              <Text style={styles.permissionButtonText}>
+                Запросить разрешение
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.screenshotsContainer}>
           {screenshots.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Icon name="screenshot" size={80} color="#CCC" />
               <Text style={styles.emptyText}>Скриншоты не добавлены</Text>
+              <Text style={styles.emptySubtext}>
+                {hasOverlayPermission
+                  ? 'Используйте плавающую кнопку поверх всех приложений для создания скриншотов'
+                  : 'Сначала разрешите отображение поверх других приложений'}
+              </Text>
             </View>
           ) : (
             screenshots.map((uri, index) => (
@@ -190,6 +247,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1976D2',
   },
+  permissionContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  permissionButton: {
+    backgroundColor: '#4A90E2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    borderRadius: 8,
+    width: '100%',
+  },
+  permissionButtonText: {
+    color: '#FFFFFF',
+    marginLeft: 10,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   screenshotsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -205,6 +281,14 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontSize: 16,
     color: '#999',
+    fontWeight: '500',
+  },
+  emptySubtext: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#CCC',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   screenshotWrapper: {
     width: '48%',
@@ -228,23 +312,6 @@ const styles = StyleSheet.create({
     height: 30,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  floatingButton: {
-    position: 'absolute',
-    right: 20,
-    top: 100,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#4A90E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    zIndex: 1000,
   },
   controls: {
     padding: 20,
@@ -275,4 +342,3 @@ const styles = StyleSheet.create({
 });
 
 export default ScreenshotProtocolScreen;
-
